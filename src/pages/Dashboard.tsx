@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { Trash2, Edit2, BookmarkMinus, CheckCircle2, Clock, Smile, Sparkles, Bell } from 'lucide-react';
+import { Trash2, Edit2, BookmarkMinus, CheckCircle2, Clock, Smile, Sparkles, Bell, Heart, BookOpen } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { Post, LifeTeaNotification, SavedPost } from '../types';
 
@@ -36,6 +36,11 @@ export default function Dashboard() {
     const [notifications, setNotifications] = useState<LifeTeaNotification[]>([]);
     const [profile, setProfile] = useState<any>(null);
     const [stats, setStats] = useState({ totalPosts: 0, totalHugs: 0 });
+
+    // Edit Modal State
+    const [editingPost, setEditingPost] = useState<Post | null>(null);
+    const [editTitle, setEditTitle] = useState('');
+    const [editContent, setEditContent] = useState('');
 
     useEffect(() => {
         loadDashboardData();
@@ -76,6 +81,33 @@ export default function Dashboard() {
         setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     };
 
+    const handleUnsave = async (postId: string) => {
+        if (!profile) return;
+        setSavedPosts(prev => prev.filter(sp => sp.post_id !== postId));
+        await supabase.from('saved_posts').delete().eq('post_id', postId).eq('user_id', profile.id);
+    };
+
+    const handleDelete = async (postId: string) => {
+        if (!confirm("Are you sure you want to delete this story?")) return;
+        setPosts(prev => prev.filter(p => p.id !== postId));
+        setStats(prev => ({ ...prev, totalPosts: prev.totalPosts - 1 }));
+        await supabase.from('posts').delete().eq('id', postId);
+    };
+
+    const openEdit = (post: Post) => {
+        setEditingPost(post);
+        setEditTitle(post.title || '');
+        setEditContent(post.content || '');
+    };
+
+    const handleEditSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingPost) return;
+        setPosts(prev => prev.map(p => p.id === editingPost.id ? { ...p, title: editTitle, content: editContent } : p));
+        await supabase.from('posts').update({ title: editTitle, content: editContent }).eq('id', editingPost.id);
+        setEditingPost(null);
+    };
+
     const moodData = [...posts]
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
         .map(p => ({
@@ -92,49 +124,59 @@ export default function Dashboard() {
         <div className="py-8 px-4 max-w-5xl mx-auto flex flex-col gap-8">
 
             {/* Top Header Card */}
-            <div className="bg-[#5B2D8E] text-white p-8 rounded-3xl shadow-lg relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-bl-full mix-blend-overlay"></div>
-                <div className="flex flex-col md:flex-row gap-8 items-center relative z-10">
-                    <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center text-white backdrop-blur-md border border-white/30 text-4xl">
-                        {profile?.username?.[0]?.toUpperCase() || '👤'}
+            <div className="bg-gradient-to-br from-[#4c1d95] via-[#5B2D8E] to-[#7c3aed] text-white p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden group border border-[#8B5CF6]/30">
+                <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-bl from-white/20 to-transparent rounded-bl-full mix-blend-overlay opacity-50 group-hover:opacity-100 transition-opacity duration-700"></div>
+                <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-[#EC4899]/20 blur-[80px] rounded-full"></div>
+
+                <div className="flex flex-col md:flex-row gap-10 items-center relative z-10">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-white/30 rounded-full blur-xl animate-pulse"></div>
+                        <div className="w-32 h-32 bg-white/10 rounded-full flex items-center justify-center text-white backdrop-blur-xl border-2 border-white/40 text-5xl shadow-xl relative z-10 hover:scale-105 transition-transform duration-500 cursor-default">
+                            {profile?.username?.[0]?.toUpperCase() || '👤'}
+                        </div>
                     </div>
                     <div className="flex-1 text-center md:text-left">
-                        <h1 className="text-3xl font-bold mb-2">{profile?.username || 'Your Dashboard'}</h1>
-                        <p className="text-[#8B5CF6] font-medium mb-4 tracking-wide uppercase text-sm">
+                        <h1 className="text-4xl font-extrabold mb-2 tracking-tight drop-shadow-md">{profile?.username || 'Your Dashboard'}</h1>
+                        <p className="text-purple-200 font-bold mb-8 tracking-widest uppercase text-xs opacity-90">
                             Member since {profile ? format(new Date(profile.created_at), 'MMMM yyyy') : 'Recently'}
                         </p>
-                        <div className="flex items-center justify-center md:justify-start gap-8">
-                            <div>
-                                <p className="text-3xl font-bold text-white mb-1">{stats.totalPosts}</p>
-                                <p className="text-sm font-medium text-white/70">Stories Shared</p>
+                        <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
+                            <div className="bg-white/10 backdrop-blur-md border border-white/20 px-6 py-3 rounded-2xl flex items-center gap-4 hover:bg-white/20 transition-all cursor-default shadow-lg">
+                                <div className="p-2.5 bg-white/20 rounded-xl"><Edit2 size={22} className="text-purple-50" /></div>
+                                <div className="text-left">
+                                    <p className="text-2xl font-black text-white leading-none drop-shadow-sm">{stats.totalPosts}</p>
+                                    <p className="text-[10px] font-extrabold text-white/70 uppercase tracking-widest mt-1">Stories</p>
+                                </div>
                             </div>
-                            <div className="w-px h-10 bg-white/20"></div>
-                            <div>
-                                <p className="text-3xl font-bold text-white mb-1">{stats.totalHugs}</p>
-                                <p className="text-sm font-medium text-white/70">Virtual Hugs Received</p>
+                            <div className="bg-white/10 backdrop-blur-md border border-white/20 px-6 py-3 rounded-2xl flex items-center gap-4 hover:bg-white/20 transition-all cursor-default shadow-lg">
+                                <div className="p-2.5 bg-white/20 rounded-xl"><Heart size={22} className="text-purple-50 fill-purple-50/20" /></div>
+                                <div className="text-left">
+                                    <p className="text-2xl font-black text-white leading-none drop-shadow-sm">{stats.totalHugs}</p>
+                                    <p className="text-[10px] font-extrabold text-white/70 uppercase tracking-widest mt-1">Hugs</p>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div className="flex gap-4 border-b border-slate-200 overflow-x-auto scrollbar-none">
+            <div className="flex gap-2 bg-slate-100/80 backdrop-blur-sm p-1.5 rounded-[1.25rem] overflow-x-auto scrollbar-none w-fit border border-slate-200/50 shadow-inner">
                 {[
-                    { id: 'mood', label: 'My Mood' },
-                    { id: 'posts', label: 'My Stories' },
-                    { id: 'saved', label: 'Saved Stories' },
-                    { id: 'notifications', label: `Notifications ${notifications.filter(n => !n.is_read).length > 0 ? `(${notifications.filter(n => !n.is_read).length})` : ''}` }
+                    { id: 'mood', label: 'My Mood', icon: <Sparkles size={16} /> },
+                    { id: 'posts', label: 'My Stories', icon: <Edit2 size={16} /> },
+                    { id: 'saved', label: 'Saved Stories', icon: <BookmarkMinus size={16} /> },
+                    { id: 'notifications', label: `Notifications ${notifications.filter(n => !n.is_read).length > 0 ? `(${notifications.filter(n => !n.is_read).length})` : ''}`, icon: <Bell size={16} /> }
                 ].map(tab => (
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id as any)}
-                        className={`pb-4 px-2 text-sm font-bold transition-all relative whitespace-nowrap ${activeTab === tab.id ? 'text-[#5B2D8E]' : 'text-slate-400 hover:text-slate-600'
+                        className={`flex items-center gap-2 px-5 py-2.5 text-sm font-bold transition-all whitespace-nowrap rounded-xl ${activeTab === tab.id
+                                ? 'bg-white text-[#5B2D8E] shadow-sm border border-slate-200/50'
+                                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
                             }`}
                     >
+                        {tab.icon}
                         {tab.label}
-                        {activeTab === tab.id && (
-                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#5B2D8E]" />
-                        )}
                     </button>
                 ))}
             </div>
@@ -186,35 +228,53 @@ export default function Dashboard() {
                 {activeTab === 'posts' && (
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {posts.map(post => (
-                            <div key={post.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-start hover:shadow-md transition-all group">
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">{format(new Date(post.created_at), 'MMM dd, yyyy')}</span>
-                                <h3 className="font-bold text-lg text-[#1A1A2E] mb-3 line-clamp-2">{post.title}</h3>
-                                <p className="text-sm text-slate-500 mb-6 line-clamp-3">{post.content}</p>
-                                <div className="mt-auto w-full flex items-center justify-between border-t border-slate-100 pt-4">
-                                    <span className="text-sm font-bold text-[#5B2D8E] bg-[#5B2D8E]/10 px-3 py-1 rounded-full">{post.emotion}</span>
-                                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button className="p-2 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-slate-50"><Edit2 size={16} /></button>
-                                        <button className="p-2 text-slate-400 hover:text-red-500 rounded-lg hover:bg-slate-50"><Trash2 size={16} /></button>
+                            <div key={post.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:-translate-y-1 hover:border-purple-200 transition-all duration-300 flex flex-col items-start group relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-[#5B2D8E]/5 to-transparent rounded-bl-full"></div>
+                                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-3">{format(new Date(post.created_at), 'MMM dd, yyyy')}</span>
+                                <h3 className="font-extrabold text-xl text-[#1A1A2E] mb-3 line-clamp-2 leading-tight">{post.title}</h3>
+                                <p className="text-slate-600 mb-6 line-clamp-3 leading-relaxed text-sm">{post.content}</p>
+                                <div className="mt-auto w-full flex items-center justify-between border-t border-slate-100 pt-5">
+                                    <span className="text-[11px] font-extrabold text-[#5B2D8E] bg-[#5B2D8E]/10 px-4 py-1.5 rounded-full shadow-sm shadow-[#5B2D8E]/10 border border-[#5B2D8E]/10">{post.emotion}</span>
+                                    <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0">
+                                        <button onClick={() => openEdit(post)} className="p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"><Edit2 size={16} /></button>
+                                        <button onClick={() => handleDelete(post.id)} className="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={16} /></button>
                                     </div>
                                 </div>
                             </div>
                         ))}
-                        {posts.length === 0 && <p className="text-slate-500 col-span-full">You haven't shared any stories yet.</p>}
+                        {posts.length === 0 && (
+                            <div className="col-span-full py-20 flex flex-col items-center justify-center text-slate-500 bg-white shadow-sm rounded-[2rem] border border-dashed border-slate-200">
+                                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4"><Edit2 size={32} className="text-slate-300" /></div>
+                                <p className="font-extrabold text-xl text-[#1A1A2E]">No stories shared yet.</p>
+                                <p className="text-sm mt-2 text-slate-400">Pour your heart out and they will appear here.</p>
+                            </div>
+                        )}
                     </div>
                 )}
 
                 {activeTab === 'saved' && (
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {savedPosts.map(sp => (
-                            <div key={sp.id} className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-start hover:shadow-md transition-all group relative">
-                                <h3 className="font-bold text-lg text-[#1A1A2E] mb-3 line-clamp-2 pr-8">{sp.posts.title}</h3>
-                                <p className="text-sm text-slate-500 mb-6 line-clamp-3">{sp.posts.content}</p>
-                                <button className="absolute top-6 right-6 text-slate-300 hover:text-red-500 transition-colors">
-                                    <BookmarkMinus size={20} />
+                            <div key={sp.id} className="bg-gradient-to-b from-white to-slate-50/50 p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col items-start hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)] hover:-translate-y-1 hover:border-slate-300 transition-all duration-300 group relative cursor-pointer" onClick={() => window.location.href = `/post/${sp.post_id}`}>
+                                <span className="text-[10px] font-extrabold text-[#5B2D8E] uppercase tracking-widest mb-3 flex items-center gap-1.5"><BookmarkMinus size={14} /> Saved Story</span>
+                                <h3 className="font-extrabold text-xl text-[#1A1A2E] mb-3 line-clamp-2 pr-8 leading-tight">{sp.posts.title}</h3>
+                                <p className="text-slate-600 mb-2 line-clamp-3 leading-relaxed text-sm">{sp.posts.content}</p>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleUnsave(sp.post_id); }}
+                                    className="absolute top-6 right-6 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100 -translate-y-2 group-hover:translate-y-0"
+                                    title="Unsave Post"
+                                >
+                                    <Trash2 size={18} />
                                 </button>
                             </div>
                         ))}
-                        {savedPosts.length === 0 && <p className="text-slate-500 col-span-full">You haven't saved any stories yet.</p>}
+                        {savedPosts.length === 0 && (
+                            <div className="col-span-full py-20 flex flex-col items-center justify-center text-slate-500 bg-white shadow-sm rounded-[2rem] border border-dashed border-slate-200">
+                                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4"><BookmarkMinus size={32} className="text-slate-300" /></div>
+                                <p className="font-extrabold text-xl text-[#1A1A2E]">No saved stories.</p>
+                                <p className="text-sm mt-2 text-slate-400">Bookmark stories from the community feed.</p>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -243,6 +303,32 @@ export default function Dashboard() {
                     </div>
                 )}
             </div>
+
+            {/* Edit Modal */}
+            {editingPost && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white w-full max-w-2xl rounded-3xl p-8 shadow-2xl relative animate-in fade-in zoom-in duration-200">
+                        <button onClick={() => setEditingPost(null)} className="absolute top-6 right-6 text-slate-400 hover:text-[#1A1A2E]">✕</button>
+                        <h2 className="text-2xl font-bold text-[#1A1A2E] mb-6">Edit Story</h2>
+                        <form onSubmit={handleEditSubmit} className="flex flex-col gap-6">
+                            <input
+                                type="text" value={editTitle} onChange={e => setEditTitle(e.target.value)} required
+                                className="w-full text-xl font-bold text-[#1A1A2E] border-slate-200 rounded-xl px-4 py-3 placeholder:text-slate-300 focus:border-[#5B2D8E] focus:ring-[#5B2D8E]"
+                                placeholder="Story Title"
+                            />
+                            <textarea
+                                value={editContent} onChange={e => setEditContent(e.target.value)} required
+                                className="w-full min-h-[200px] text-slate-700 border-slate-200 rounded-xl px-4 py-3 resize-y focus:border-[#5B2D8E] focus:ring-[#5B2D8E]"
+                                placeholder="Write your story..."
+                            />
+                            <div className="flex justify-end gap-3 pt-2">
+                                <button type="button" onClick={() => setEditingPost(null)} className="px-6 py-2.5 rounded-full font-bold text-slate-500 hover:bg-slate-100 transition-colors">Cancel</button>
+                                <button type="submit" className="bg-[#5B2D8E] text-white px-8 py-2.5 rounded-full font-bold hover:bg-[#5B2D8E]/90 transition-all shadow-sm">Save Changes</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
         </div>
     );

@@ -11,7 +11,7 @@ function cn(...inputs: ClassValue[]) {
 
 const EMOTION_COLORS: Record<string, string> = {
     Happy: '#F59E0B', Sad: '#6366F1', Frustrated: '#EF4444',
-    Calm: '#8B5CF6', Anxious: '#F97316', Melancholy: '#3B82F6',
+    Calm: '#8b5cf6ff', Anxious: '#F97316', Melancholy: '#3B82F6',
     Hopeful: '#10B981', Overwhelmed: '#EC4899', Default: '#CBD5E1'
 };
 
@@ -58,13 +58,21 @@ export default function CreatePost() {
         setIsPosting(true);
         const { data: { session } } = await supabase.auth.getSession();
 
-        await supabase.from('posts').insert([{
-            user_id: session?.user?.id,
+        const { error } = await supabase.from('posts').insert([{
+            user_id: session?.user?.id || null, // Allow fallback if session is weird
             title, content, is_anonymous: isAnonymous,
             alias: isAnonymous ? alias : 'User',
             emotion: selectedEmotion === 'Neutral' && aiDetected ? aiDetected : selectedEmotion,
             category, hug_count: 0
         }]);
+
+        setIsPosting(false);
+
+        if (error) {
+            console.error("Supabase error detail:", error);
+            alert(`Could not post: ${error.message}`);
+            return;
+        }
 
         navigate('/feed');
     };

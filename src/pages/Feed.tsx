@@ -100,6 +100,8 @@ export default function Feed() {
     const [posts, setPosts] = useState<Post[]>([]);
     const [userProfile, setUserProfile] = useState<Profile | null>(null);
     const [moodRingData, setMoodRingData] = useState<any[]>([]);
+    const [huggedPosts, setHuggedPosts] = useState<Set<string>>(new Set());
+    const [savedPosts, setSavedPosts] = useState<Set<string>>(new Set());
 
     // Debounced AI Emotion Detection
     useEffect(() => {
@@ -118,12 +120,18 @@ export default function Feed() {
 
     // Load Data & Setup Real-time
     useEffect(() => {
+        const loadSaved = async (userId: string) => {
+            const { data } = await supabase.from('saved_posts').select('post_id').eq('user_id', userId);
+            if (data) setSavedPosts(new Set(data.map(d => d.post_id)));
+        };
+
         const loadData = async () => {
             // 1. Get current user profile
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
                 const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
                 setUserProfile(profile);
+                loadSaved(session.user.id);
             }
 
             // 2. Load Posts
@@ -189,17 +197,27 @@ export default function Feed() {
         try {
             const { data: { session } } = await supabase.auth.getSession();
             const newPost = {
-                user_id: session?.user?.id,
+                user_id: session?.user?.id || null, // Avoid FK errors if profile isn't fully set up
                 title,
                 content,
                 is_anonymous: isAnonymous,
-                alias: isAnonymous ? alias : userProfile?.username,
+                alias: isAnonymous ? alias : (userProfile?.username || 'User'),
                 emotion: selectedEmotion === 'Neutral' && aiDetected ? aiDetected : selectedEmotion,
                 category,
                 hug_count: 0
             };
 
-            await supabase.from('posts').insert([newPost]);
+            const { data, error } = await supabase.from('posts').insert([newPost]).select();
+            if (error) {
+                alert(`Error: ${error.message}`);
+                throw error;
+            }
+
+            // Optimistic update so it appears instantly even if Realtime isn't configured for 'posts'
+            if (data && data[0]) {
+                setPosts(prev => [data[0], ...prev]);
+                fetchMoodRing();
+            }
 
             // Reset composer
             setTitle('');
@@ -216,16 +234,42 @@ export default function Feed() {
     };
 
     const handleHug = async (postId: string) => {
+        if (huggedPosts.has(postId)) return; // Prevent multiple likes
+
         // Optimistic UI update
+        setHuggedPosts(prev => new Set(prev).add(postId));
         setPosts(prev => prev.map(p => p.id === postId ? { ...p, hug_count: p.hug_count + 1 } : p));
 
-        // DB Update: increment by 1
         const post = posts.find(p => p.id === postId);
         if (!post) return;
 
-        await supabase.from('posts').update({ hug_count: post.hug_count + 1 }).eq('id', postId);
+        // Try to record reaction to DB
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+            await supabase.from('reactions').insert({
+                post_id: postId,
+                user_id: session.user.id,
+                type: 'hug'
+            });
+        }
 
-        // Send Notification if we wanted to
+        const { error } = await supabase.from('posts').update({ hug_count: post.hug_count + 1 }).eq('id', postId);
+        if (error) {
+            console.error("Failed to update post hug_count (might be RLS):", error);
+        }
+    };
+
+    const handleSavePost = async (postId: string) => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) return;
+
+        if (savedPosts.has(postId)) {
+            setSavedPosts(prev => { const next = new Set(prev); next.delete(postId); return next; });
+            await supabase.from('saved_posts').delete().eq('post_id', postId).eq('user_id', session.user.id);
+        } else {
+            setSavedPosts(prev => { const next = new Set(prev); next.add(postId); return next; });
+            await supabase.from('saved_posts').insert({ post_id: postId, user_id: session.user.id });
+        }
     };
 
     const dominantEmotion = moodRingData.length > 0 ? moodRingData[0].name : "Calm";
@@ -280,7 +324,10 @@ export default function Feed() {
                     <p className="text-xs text-slate-500 leading-relaxed mb-4">
                         Several members are feeling 'Overwhelmed' today.
                     </p>
-                    <button className="w-full bg-[#5B2D8E]/10 text-[#5B2D8E] py-2.5 rounded-xl text-sm font-bold hover:bg-[#5B2D8E]/20 transition-all active:scale-95">
+                    <button
+                        onClick={() => setFilterEmotion('Overwhelmed')}
+                        className="w-full bg-[#5B2D8E]/10 text-[#5B2D8E] py-2.5 rounded-xl text-sm font-bold hover:bg-[#5B2D8E]/20 transition-all active:scale-95"
+                    >
                         Send Support
                     </button>
                 </div>
@@ -460,21 +507,35 @@ export default function Feed() {
                                     <div className="flex items-center gap-4">
                                         <button
                                             onClick={() => handleHug(post.id)}
-                                            className="flex items-center gap-2 bg-[#8B5CF6]/10 text-[#5B2D8E] px-4 py-2 rounded-full text-sm font-bold hover:bg-[#8B5CF6]/20 transition-all active:scale-95 group/btn border border-[#8B5CF6]/10"
+                                            disabled={huggedPosts.has(post.id)}
+                                            className={cn(
+                                                "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-bold transition-all border",
+                                                huggedPosts.has(post.id)
+                                                    ? "bg-[#5B2D8E] text-white border-[#5B2D8E] opacity-90"
+                                                    : "bg-[#8B5CF6]/10 text-[#5B2D8E] hover:bg-[#8B5CF6]/20 active:scale-95 border-[#8B5CF6]/10 group/btn"
+                                            )}
                                         >
                                             <motion.div whileTap={{ scale: 1.4, rotate: -15 }}>
-                                                <Heart size={16} className="fill-[#5B2D8E]" />
+                                                <Heart size={16} className={huggedPosts.has(post.id) ? "fill-white text-white" : "fill-[#5B2D8E] text-[#5B2D8E]"} />
                                             </motion.div>
-                                            Send Hug ({post.hug_count})
+                                            {huggedPosts.has(post.id) ? 'Hugged' : 'Send Hug'} ({post.hug_count})
                                         </button>
-                                        <button className="flex items-center gap-2 text-slate-400 hover:text-[#5B2D8E] transition-colors text-sm font-bold">
+                                        <button className="flex items-center gap-2 text-slate-400 hover:text-[#5B2D8E] transition-colors text-sm font-bold" onClick={() => window.location.href = `/post/${post.id}`}>
                                             <MessageSquare size={16} />
                                             Comments
                                         </button>
                                     </div>
-                                    <button className="text-slate-400 hover:text-[#5B2D8E] transition-colors">
-                                        <Share2 size={18} />
-                                    </button>
+                                    <div className="flex items-center gap-4">
+                                        <button
+                                            onClick={() => handleSavePost(post.id)}
+                                            className={cn("transition-colors", savedPosts.has(post.id) ? "text-[#5B2D8E]" : "text-slate-400 hover:text-[#5B2D8E]")}
+                                        >
+                                            <Bookmark size={18} className={savedPosts.has(post.id) ? "fill-[#5B2D8E]" : ""} />
+                                        </button>
+                                        <button className="text-slate-400 hover:text-[#5B2D8E] transition-colors">
+                                            <Share2 size={18} />
+                                        </button>
+                                    </div>
                                 </div>
                             </motion.div>
                         ))}

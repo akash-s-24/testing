@@ -49,6 +49,7 @@ export default function PostDetail() {
     const [isAnonymous, setIsAnonymous] = useState(true);
     const [userProfile, setUserProfile] = useState<any>(null);
     const [commentAlias] = useState(generateAlias());
+    const [hasHugged, setHasHugged] = useState(false);
 
     useEffect(() => {
         const fetchPostAndComments = async () => {
@@ -94,15 +95,26 @@ export default function PostDetail() {
     }, [id]);
 
     const handleHug = async () => {
-        if (!post || !id) return;
+        if (!post || !id || hasHugged) return;
+        setHasHugged(true);
         setPost({ ...post, hug_count: post.hug_count + 1 });
+
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+            await supabase.from('reactions').insert({
+                post_id: id,
+                user_id: session.user.id,
+                type: 'hug'
+            });
+        }
+
         await supabase.from('posts').update({ hug_count: post.hug_count + 1 }).eq('id', id);
 
         // Auto insert an anonymous notification if it's someone else's post
         if (post.user_id && post.user_id !== userProfile?.id) {
             await supabase.from('notifications').insert([{
                 user_id: post.user_id,
-                message: `💜 ${isAnonymous ? commentAlias : userProfile?.username} sent you a hug on your story!`
+                message: `💜 ${isAnonymous ? commentAlias : (userProfile?.username || 'Someone')} sent you a hug on your story!`
             }]);
         }
     };
@@ -114,18 +126,27 @@ export default function PostDetail() {
 
         const commentRecord = {
             post_id: id,
-            user_id: session?.user?.id,
+            user_id: session?.user?.id || null, // Allow fallback
             content: newComment,
             is_anonymous: isAnonymous
         };
 
-        await supabase.from('comments').insert([commentRecord]);
+        const { data, error } = await supabase.from('comments').insert([commentRecord]).select(`*, profiles(username)`);
+        if (error) {
+            alert(`Could not post comment: ${error.message}`);
+            return;
+        }
+
+        // Optimistic UI update
+        if (data && data[0]) {
+            setComments(prev => [...prev, data[0]]);
+        }
 
         // Notification
         if (post && post.user_id && post.user_id !== session?.user?.id) {
             await supabase.from('notifications').insert([{
                 user_id: post.user_id,
-                message: `💬 ${isAnonymous ? commentAlias : userProfile?.username} commented on your story!`
+                message: `💬 ${isAnonymous ? commentAlias : (userProfile?.username || 'Someone')} commented on your story!`
             }]);
         }
 
@@ -168,10 +189,16 @@ export default function PostDetail() {
                 <div className="flex items-center justify-between pt-6 border-t border-slate-100">
                     <button
                         onClick={handleHug}
-                        className="flex items-center gap-2 bg-[#8B5CF6]/10 text-[#5B2D8E] px-6 py-3 rounded-full font-bold hover:bg-[#8B5CF6]/20 transition-all shadow-sm active:scale-95"
+                        disabled={hasHugged}
+                        className={cn(
+                            "flex items-center gap-2 px-6 py-3 rounded-full font-bold transition-all shadow-sm",
+                            hasHugged
+                                ? "bg-[#5B2D8E] text-white opacity-90"
+                                : "bg-[#8B5CF6]/10 text-[#5B2D8E] hover:bg-[#8B5CF6]/20 active:scale-95"
+                        )}
                     >
-                        <Heart size={20} className="fill-[#5B2D8E]" />
-                        Send Hug ({post.hug_count})
+                        <Heart size={20} className={hasHugged ? "fill-white text-white" : "fill-[#5B2D8E]"} />
+                        {hasHugged ? 'Hugged' : 'Send Hug'} ({post.hug_count})
                     </button>
                     <div className="flex items-center gap-2 text-slate-400 font-bold">
                         <MessageSquare size={20} />

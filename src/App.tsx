@@ -14,13 +14,24 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
+      if (session?.user) {
+        // Hotfix: Ensure the user exists in profiles to prevent FK constraint failures on posts/comments
+        await supabase.from('profiles').upsert([
+          { id: session.user.id, username: session.user.email?.split('@')[0] || 'User', is_anonymous_default: true }
+        ], { onConflict: 'id', ignoreDuplicates: true });
+      }
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
+      if (session?.user) {
+        await supabase.from('profiles').upsert([
+          { id: session.user.id, username: session.user.email?.split('@')[0] || 'User', is_anonymous_default: true }
+        ], { onConflict: 'id', ignoreDuplicates: true });
+      }
     });
 
     return () => subscription.unsubscribe();
