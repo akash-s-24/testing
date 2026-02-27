@@ -1,0 +1,5 @@
+{
+  "name": "LifeTea",
+  "description": "A community-driven platform for anonymous emotional storytelling with AI-powered empathy and mood tracking.",
+  "requestFramePermissions": ["microphone"]
+}

@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-purple: #5B2D8E;
+  --color-brand-lavender: #E9D5FF;
+  --color-brand-cream: #FAF8F5;
+  
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-brand-cream text-slate-900 font-sans;
+  }
+}
+
+.emotion-border-joy { border-color: #FACC15; }
+.emotion-border-sadness { border-color: #6366F1; }
+.emotion-border-anger { border-color: #EF4444; }
+.emotion-border-fear { border-color: #8B5CF6; }
+.emotion-border-surprise { border-color: #F97316; }
+.emotion-border-disgust { border-color: #10B981; }
+.emotion-border-hope { border-color: #34D399; }
+.emotion-border-loneliness { border-color: #94A3B8; }
+
